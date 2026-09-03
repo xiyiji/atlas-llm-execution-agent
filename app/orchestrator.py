@@ -19,7 +19,7 @@ import asyncio
 import logging
 import time
 
-from . import audit, config, memory
+from . import audit, config, llm, memory
 from .agents import COMMITTEE
 from .event_bus import BUS
 from .models import Event, PlanStep, StepStatus, Task, TaskStatus
@@ -251,6 +251,13 @@ class Orchestrator:
                 return True
             except asyncio.CancelledError:
                 raise
+            except llm.ProviderError as exc:
+                # Configuration problem, not a flaky step: stop now and say what to fix.
+                step.error = str(exc)
+                step.status = StepStatus.FAILED
+                self._emit(task, "provider.error", step.agent, str(exc), {"step_id": step.id, "provider": exc.provider, "detail": exc.detail, "hint": exc.hint})
+                self._emit(task, "step.failed", step.agent, "Model provider unavailable", {"step_id": step.id, "error": step.error, "attempts": step.attempts})
+                return False
             except Exception as exc:
                 step.error = f"{type(exc).__name__}: {exc}"
                 if attempt < total_attempts:
@@ -327,7 +334,11 @@ class Orchestrator:
             # Shutdown in progress: leave the persisted state as-is so recover() can continue it.
             raise
         except Exception as exc:
-            task.error = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, llm.ProviderError):
+                task.error = str(exc)
+                self._emit(task, "provider.error", "", str(exc), {"provider": exc.provider, "detail": exc.detail, "hint": exc.hint})
+            else:
+                task.error = f"{type(exc).__name__}: {exc}"
             self._emit(task, "task.failed", "", task.error, {"error": task.error})
             self._finish(task, TaskStatus.FAILED, "failed", task.error, "Task failed")
 

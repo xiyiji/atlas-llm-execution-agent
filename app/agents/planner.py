@@ -62,8 +62,6 @@ class Planner(Agent):
                 f"## Result\n\nAll committee steps for **{task.goal}** completed successfully.\n\n"
                 f"{details}\n\n### Verification\n\n{task.verification or 'All checks passed.'}"
             )
-            if llm.last_error():
-                report += f"\n\n> Live model fallback: {llm.last_error()}"
             return report
         prompt = "\n\n".join(f"{step.title}\n{step.output}" for step in task.steps)
         return await llm.complete(

@@ -89,4 +89,4 @@ More in [docs/architecture.md](docs/architecture.md), [docs/runbook.md](docs/run
 
 ## Models
 
-Set `FORCE_DEMO=0` and one of `ANTHROPIC_API_KEY`, `CEREBRAS_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OLLAMA_BASE_URL` in `.env`. If a provider call fails, the task finishes in demo mode and says so in the report.
+Set `FORCE_DEMO=0` and one of `ANTHROPIC_API_KEY`, `CEREBRAS_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OLLAMA_BASE_URL` in `.env`. The server checks the provider at startup and in `/api/health`; if Ollama isn't running or the model isn't pulled, the UI shows a banner saying exactly what to run. A model call that fails mid-task fails the task with the same message rather than finishing with placeholder output.

@@ -42,6 +42,12 @@ async def lifespan(_: FastAPI):
     configure_logging()
     config.validate_production()
     await asyncio.to_thread(STORE.initialize)
+    status = await llm.probe()
+    if status["ready"]:
+        logging.getLogger(__name__).info("model_provider_ready", extra={"provider": status["provider"], "model": status["model"]})
+    else:
+        logging.getLogger(__name__).error("model_provider_not_ready", extra=status)
+        print(f"\n!!! Model provider '{status['provider']}' is not ready: {status['problem']}\n!!! {status['hint']}\n", flush=True)
     janitor: asyncio.Task | None = None
     if config.EXECUTION_BACKEND != "celery":
         await ORCHESTRATOR.recover()
@@ -82,12 +88,16 @@ async def health() -> dict:
         checks["event_bus"] = await BUS.healthcheck()
     except Exception:
         pass
+    status = await llm.probe()
+    checks["model_provider"] = status["ready"]
     return {
         "ok": all(checks.values()),
         "checks": checks,
-        "provider": llm.provider(),
-        "model": llm.model_name(),
+        "provider": status["provider"],
+        "model": status["model"],
         "demo": llm.is_demo(),
+        "provider_problem": status["problem"],
+        "provider_hint": status["hint"],
         "execution_backend": config.EXECUTION_BACKEND,
     }
 

@@ -40,6 +40,7 @@ def _float(name: str, default: float) -> float:
 _load_env(ROOT_DIR / ".env")
 
 FORCE_DEMO = _bool("FORCE_DEMO", True)
+LLM_FALLBACK_TO_DEMO = _bool("LLM_FALLBACK_TO_DEMO", False)
 APPROVAL_THRESHOLD = _int("APPROVAL_THRESHOLD", 60)
 MAX_STEP_RETRIES = _int("MAX_STEP_RETRIES", 2)
 CODE_TIMEOUT_SECONDS = _int("CODE_TIMEOUT_SECONDS", 8)

@@ -124,3 +124,9 @@ textarea:focus { outline-color: rgba(49, 89, 245, .25); }
   .task-row { grid-template-columns: 65px 65px 1fr; }
   .event-row { grid-template-columns: 1fr; border-bottom: 1px solid var(--line); padding: 7px 0; }
 }
+
+.banner { margin: 14px 24px 0; padding: 12px 16px; border: 1px solid var(--red); border-radius: 10px; background: #fff5f5; color: #7a1c1c; font-size: 14px; line-height: 1.5; }
+.banner code { font: 12.5px var(--mono); background: #fde8e8; padding: 1px 5px; border-radius: 4px; }
+.report .failure { border-left: 3px solid var(--red); padding: 10px 14px; background: #fff5f5; border-radius: 6px; }
+.report .failure h3 { margin: 0 0 6px; color: var(--red); font-size: 15px; }
+.report .failure p { margin: 4px 0; }
