@@ -14,7 +14,7 @@ class Verifier(Agent):
     async def run(self, task: Task, step: PlanStep) -> str:
         outputs = "\n\n".join(f"{item.title}: {item.output}" for item in task.steps if item.output)
         response = await llm.complete_json(
-            f"ATLAS_JSON_VERIFIER Return only JSON {{\"passed\":bool,\"notes\":str}}. Fail incomplete or unsafe results. {self.guard}",
+            f"ATLAS_JSON_VERIFIER Judge whether OUTPUTS satisfy GOAL. Return only JSON like {{\"passed\": true, \"notes\": \"one or two sentences on coverage and consistency\"}}. Fail incomplete or unsafe results. {self.guard}",
             f"GOAL: {task.goal}\nOUTPUTS:\n{outputs}",
         )
         passed = bool(response.get("passed", False)) if isinstance(response, dict) else False

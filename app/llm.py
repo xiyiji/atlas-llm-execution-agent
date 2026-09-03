@@ -9,6 +9,7 @@ Set LLM_FALLBACK_TO_DEMO=1 only if you explicitly want the old behaviour.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -17,6 +18,8 @@ import httpx
 from prometheus_client import Counter, Histogram
 
 from . import config
+
+log = logging.getLogger(__name__)
 
 LLM_CALLS = Counter("atlas_llm_calls_total", "Model calls by provider and outcome", ["provider", "outcome"])
 LLM_LATENCY = Histogram("atlas_llm_call_duration_seconds", "Model call latency", ["provider"])
@@ -34,6 +37,10 @@ class ProviderError(RuntimeError):
         self.provider = provider_name
         self.detail = detail
         self.hint = hint
+
+
+class ModelOutputError(RuntimeError):
+    """The model answered, but not with the JSON the caller asked for. Retryable at the step level."""
 
 
 def _hint(provider_name: str, detail: str) -> str:
@@ -112,20 +119,23 @@ async def _anthropic(system: str, prompt: str, max_tokens: int) -> str:
     return "".join(getattr(block, "text", "") for block in message.content)
 
 
-async def _openai_compat(base_url: str, api_key: str, model: str, system: str, prompt: str, max_tokens: int) -> str:
+async def _openai_compat(base_url: str, api_key: str, model: str, system: str, prompt: str, max_tokens: int, json_mode: bool = False) -> str:
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0.2,
     }
+    if json_mode:
+        # Ollama, Groq, Cerebras and Gemini's OpenAI endpoint all honour this; it stops small models from writing prose around the JSON.
+        payload["response_format"] = {"type": "json_object"}
     async with httpx.AsyncClient(timeout=45) as client:
         response = await client.post(f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        return response.json()["choices"][0]["message"]["content"] or ""
 
 
 def _demo(system: str, prompt: str) -> str:
@@ -156,7 +166,7 @@ def _extract(text: str, marker: str) -> str:
     return text[index + len(marker):].split("\n", 1)[0].strip()
 
 
-async def complete(system: str, prompt: str, max_tokens: int = 1200) -> str:
+async def complete(system: str, prompt: str, max_tokens: int = 1200, json_mode: bool = False) -> str:
     global _provider, _last_error
     chosen = provider()
     started = time.perf_counter()
@@ -164,7 +174,7 @@ async def complete(system: str, prompt: str, max_tokens: int = 1200) -> str:
         if chosen == "demo":
             LLM_CALLS.labels("demo", "ok").inc()
             return _demo(system, prompt)
-        text = await _live(chosen, system, prompt, max_tokens)
+        text = await _live(chosen, system, prompt, max_tokens, json_mode)
         LLM_CALLS.labels(chosen, "ok").inc()
         _last_error = ""
         return text
@@ -224,20 +234,23 @@ async def probe() -> dict:
     return result
 
 
-async def _live(chosen: str, system: str, prompt: str, max_tokens: int) -> str:
+async def _live(chosen: str, system: str, prompt: str, max_tokens: int, json_mode: bool) -> str:
     if chosen == "anthropic":
         return await _anthropic(system, prompt, max_tokens)
     if chosen == "cerebras":
-        return await _openai_compat("https://api.cerebras.ai/v1", config.CEREBRAS_API_KEY, config.CEREBRAS_MODEL, system, prompt, max_tokens)
+        return await _openai_compat("https://api.cerebras.ai/v1", config.CEREBRAS_API_KEY, config.CEREBRAS_MODEL, system, prompt, max_tokens, json_mode)
     if chosen == "gemini":
-        return await _openai_compat("https://generativelanguage.googleapis.com/v1beta/openai", config.GEMINI_API_KEY, config.GEMINI_MODEL, system, prompt, max_tokens)
+        return await _openai_compat("https://generativelanguage.googleapis.com/v1beta/openai", config.GEMINI_API_KEY, config.GEMINI_MODEL, system, prompt, max_tokens, json_mode)
     if chosen == "groq":
-        return await _openai_compat("https://api.groq.com/openai/v1", config.GROQ_API_KEY, config.GROQ_MODEL, system, prompt, max_tokens)
-    return await _openai_compat(f"{config.OLLAMA_BASE_URL}/v1", "", config.OLLAMA_MODEL, system, prompt, max_tokens)
+        return await _openai_compat("https://api.groq.com/openai/v1", config.GROQ_API_KEY, config.GROQ_MODEL, system, prompt, max_tokens, json_mode)
+    return await _openai_compat(f"{config.OLLAMA_BASE_URL}/v1", "", config.OLLAMA_MODEL, system, prompt, max_tokens, json_mode)
 
 
 def _parse_json(text: str) -> dict[str, Any] | list[Any]:
+    """Pull the first JSON object/array out of a model reply; {} if there is none."""
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.I | re.S)
+    cleaned = re.sub(r"```(?:json)?", "", cleaned)
+    decoder = json.JSONDecoder()
     candidates = [cleaned]
     for opening, closing in (("{", "}"), ("[", "]")):
         start, end = cleaned.find(opening), cleaned.rfind(closing)
@@ -250,8 +263,29 @@ def _parse_json(text: str) -> dict[str, Any] | list[Any]:
                 return value
         except json.JSONDecodeError:
             continue
+    # Prose before/after, or several objects: decode from each opening bracket and keep the first that parses.
+    for index, char in enumerate(cleaned):
+        if char in "{[":
+            try:
+                value, _ = decoder.raw_decode(cleaned[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, (dict, list)):
+                return value
     return {}
 
 
 async def complete_json(system: str, prompt: str, max_tokens: int = 1200) -> dict | list:
-    return _parse_json(await complete(system, prompt, max_tokens))
+    """Ask for JSON. One strict retry if the reply is not JSON; then ModelOutputError so the step can retry or fail visibly."""
+    text = await complete(system, prompt, max_tokens, json_mode=True)
+    value = _parse_json(text)
+    if value:
+        return value
+    log.warning("model_reply_not_json", extra={"provider": provider(), "reply": text[:400]})
+    strict = f"{system}\nReply with exactly one JSON object and nothing else: no prose, no markdown, no explanation."
+    text = await complete(strict, prompt, max_tokens, json_mode=True)
+    value = _parse_json(text)
+    if value:
+        return value
+    snippet = (text or "").strip().replace("\n", " ")[:160]
+    raise ModelOutputError(f"{provider()}/{model_name()} did not return JSON after two attempts; last reply: {snippet!r}")

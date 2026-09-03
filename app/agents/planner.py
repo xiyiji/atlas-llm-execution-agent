@@ -33,7 +33,13 @@ class Planner(Agent):
             steps.append(PlanStep(title="Verify outputs against the goal", agent="verifier", detail="Check requirement coverage and consistency."))
         else:
             response = await llm.complete_json(
-                "ATLAS_JSON_PLANNER Return only JSON: {\"steps\":[{\"title\":str,\"agent\":planner|coder|browser,\"detail\":str}]}. Do not include safety or verifier steps.",
+                "ATLAS_JSON_PLANNER You plan work for three agents: "
+                "'browser' searches the web and reads pages (use it whenever the goal needs facts, sources, citations, or anything recent); "
+                "'coder' writes and runs Python; 'planner' reasons and writes. "
+                "Return only JSON shaped like "
+                "{\"steps\":[{\"title\":\"Find recent sources on X\",\"agent\":\"browser\",\"detail\":\"collect 3-5 sources with URLs\"},"
+                "{\"title\":\"Summarize the top three with citations\",\"agent\":\"planner\",\"detail\":\"cite the URLs\"}]}. "
+                "2 to 6 steps. Do not add safety or verifier steps.",
                 f"GOAL: {task.goal}\nRECENT EPISODIC MEMORY: {memory.episodic_recall(5, task.tenant_id)}",
                 1600,
             )

@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from app import config, llm, risk
 from app.agents import COMMITTEE
@@ -154,3 +155,50 @@ def test_ssrf_guard_rejects_local_networks():
     assert not asyncio.run(_safe_public_url("http://127.0.0.1/secret"))
     assert not asyncio.run(_safe_public_url("http://[::1]/secret"))
     assert not asyncio.run(_safe_public_url("file:///etc/passwd"))
+
+
+def test_json_parser_handles_prose_and_fences():
+    assert llm._parse_json('Sure! Here is the plan:\n```json\n{"steps": [{"title": "a", "agent": "browser"}]}\n```\nLet me know.') == {"steps": [{"title": "a", "agent": "browser"}]}
+    assert llm._parse_json('Note: {not json} then {"passed": true, "notes": "ok"} trailing') == {"passed": True, "notes": "ok"}
+    assert llm._parse_json("no json here") == {}
+
+
+def test_complete_json_retries_once_then_raises(monkeypatch):
+    replies = iter(["I cannot answer in JSON, sorry.", '{"passed": false, "notes": "second try"}'])
+    seen: list[str] = []
+
+    async def fake_complete(system, prompt, max_tokens=1200, json_mode=False):
+        seen.append(system)
+        return next(replies)
+
+    monkeypatch.setattr(llm, "complete", fake_complete)
+    assert asyncio.run(llm.complete_json("sys", "p")) == {"passed": False, "notes": "second try"}
+    assert len(seen) == 2 and "nothing else" in seen[1]
+
+    async def never_json(system, prompt, max_tokens=1200, json_mode=False):
+        return "still prose"
+
+    monkeypatch.setattr(llm, "complete", never_json)
+    try:
+        asyncio.run(llm.complete_json("sys", "p"))
+    except llm.ModelOutputError as exc:
+        assert "did not return JSON" in str(exc) and "still prose" in str(exc)
+    else:
+        raise AssertionError("expected ModelOutputError")
+
+
+def test_json_mode_is_requested_from_openai_compatible_providers(monkeypatch):
+    import httpx
+
+    payloads: list[dict] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(llm.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(llm, "_provider", "ollama")
+    assert asyncio.run(llm.complete_json("sys", "p")) == {"ok": True}
+    assert payloads[0]["response_format"] == {"type": "json_object"}
+    assert payloads[0]["model"] == config.OLLAMA_MODEL

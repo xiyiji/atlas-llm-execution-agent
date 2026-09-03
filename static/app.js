@@ -40,6 +40,9 @@ async function loadHealth() {
     const ready = health.checks?.model_provider !== false;
     setConnection(ready, health.demo ? "Live · demo" : ready ? `Live · ${health.provider}` : `${health.provider} not ready`);
     renderBanner(health);
+    const needsKey = Boolean(health.auth_required);
+    $(".api-key-label").hidden = !needsKey;
+    $("#apiKey").hidden = !needsKey;
   } catch (_) { setConnection(false, "Offline"); }
 }
 

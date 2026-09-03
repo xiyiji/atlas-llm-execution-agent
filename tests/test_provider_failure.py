@@ -60,10 +60,10 @@ def test_provider_error_is_not_retried_as_a_flaky_step(monkeypatch):
     calls = 0
     original = llm.complete
 
-    async def planner_ok_then_provider_down(system, prompt, max_tokens=1200):
+    async def planner_ok_then_provider_down(system, prompt, max_tokens=1200, **kwargs):
         nonlocal calls
         if "ATLAS_JSON_SAFETY" in system or "ATLAS_JSON_PLANNER" in system:
-            return await original(system, prompt, max_tokens)
+            return await original(system, prompt, max_tokens, **kwargs)
         calls += 1
         raise llm.ProviderError("groq", "HTTP 401 invalid api key", "The groq API key was rejected. Check the key in .env.")
 

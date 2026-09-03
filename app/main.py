@@ -99,6 +99,7 @@ async def health() -> dict:
         "provider_problem": status["problem"],
         "provider_hint": status["hint"],
         "execution_backend": config.EXECUTION_BACKEND,
+        "auth_required": config.AUTH_REQUIRED,
     }
 
 
