@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Atlas committee-agent mission control">
+  <title>Atlas · Agent Mission Control</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Atlas home"><span class="mark">▲</span><strong>Atlas</strong><span>agent mission control</span></a>
+    <div class="live"><i></i><span id="connectionLabel">Connecting</span></div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel sidebar">
+      <section>
+        <h1>New task</h1>
+        <label class="eyebrow" for="goal">Goal for the committee</label>
+        <textarea id="goal" rows="5" placeholder="Describe a concrete outcome…">Research the latest developments in AI agent frameworks and summarize the top three with citations</textarea>
+        <p class="eyebrow try">Try one</p>
+        <div class="suggestions">
+          <button type="button" data-goal="Research the latest developments in AI agent frameworks and summarize the top three with citations">Research + cite</button>
+          <button type="button" data-goal="Write and run code to compute basic statistics on a sample time series and report the results">Compute in sandbox</button>
+          <button type="button" data-goal="Plan how to delete stale records from the production database and send a summary email to the team">High-risk plan</button>
+        </div>
+        <label class="switch-row"><input id="autoApprove" type="checkbox"><span class="switch"></span><span>Auto-approve high-risk plans</span></label>
+        <button class="run" id="runButton" type="button">Run task</button>
+        <p class="form-error" id="formError" role="alert"></p>
+      </section>
+      <section class="memory-section">
+        <h2>Episodic memory</h2>
+        <p>Outcomes of past runs, recalled by the Planner on the next one.</p>
+        <div class="memory-list" id="memoryList"><div class="empty">Loading memory…</div></div>
+      </section>
+    </aside>
+
+    <section class="panel mission">
+      <div class="goal-head">
+        <div><p class="eyebrow">Active goal</p><h2 id="activeGoal">No active task</h2></div>
+        <span class="status-pill idle" id="statusPill">idle</span>
+      </div>
+
+      <div class="committee" id="committee">
+        <div data-agent="planner"><i></i><strong>Planner</strong><span>Planning</span></div>
+        <div data-agent="browser"><i></i><strong>Browser</strong><span>Retrieval</span></div>
+        <div data-agent="coder"><i></i><strong>Coder</strong><span>Execution</span></div>
+        <div data-agent="verifier"><i></i><strong>Verifier</strong><span>QA</span></div>
+        <div data-agent="safety"><i></i><strong>Safety</strong><span>Risk</span></div>
+      </div>
+
+      <section class="risk-card">
+        <div><span class="eyebrow">Risk assessment</span><strong id="riskValue">—/100 · NOT ASSESSED</strong></div>
+        <div class="risk-bar"><span id="riskBar"></span><i></i></div>
+        <ul id="riskFactors"><li>Waiting for the Safety agent</li></ul>
+        <div class="approval" id="approvalBox" hidden>
+          <p>This plan needs a human decision before any execution begins.</p>
+          <button id="approveButton" type="button">Approve plan</button>
+          <button id="denyButton" class="secondary" type="button">Deny</button>
+        </div>
+      </section>
+
+      <section class="task-section">
+        <p class="eyebrow">Task graph</p>
+        <div class="task-list" id="taskList"><div class="empty">Submit a goal to create a task graph.</div></div>
+      </section>
+
+      <section class="activity-section">
+        <p class="eyebrow">Activity stream</p>
+        <div class="activity" id="activity" aria-live="polite"><div class="empty">Events will appear here in real time.</div></div>
+      </section>
+
+      <section class="report-section">
+        <p class="eyebrow">Final report</p>
+        <article class="report" id="report"><div class="empty">The verified result will appear here.</div></article>
+      </section>
+    </section>
+  </main>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

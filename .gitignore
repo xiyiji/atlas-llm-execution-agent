@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+
+# Large source/reference recording; not required at runtime.
+video.mov
