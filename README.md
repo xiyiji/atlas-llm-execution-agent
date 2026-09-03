@@ -12,6 +12,33 @@ While that happens, the UI shows the live event stream over SSE, the risk score,
 
 Everything runs in demo mode with no API keys and no network. Add a key or point it at Ollama and the same code talks to a real model.
 
+## What's in it
+
+Roughly twenty things you'd have to know to build this, grouped by where they show up in the code.
+
+| Area | Used here |
+|---|---|
+| Agent design | Planner / Safety / Coder / Browser / Verifier as separate classes behind one `run(task, step)` contract; an orchestrator that owns all state and never calls a model itself |
+| Control flow | Task graph execution, bounded retries with backoff, one verifier-driven rework pass, human approval gate with a timeout |
+| Risk scoring | Keyword rules merged with a model score — the higher wins, so the model can't lower the floor |
+| LLM plumbing | One `complete` / `complete_json` layer over Anthropic, Groq, Gemini, Cerebras, Ollama; JSON extraction from messy model output; a deterministic demo provider for tests |
+| Prompt hygiene | Fetched web text and tool output wrapped in markers and declared as data in every system prompt |
+| Persistence | SQLAlchemy 2 models, SQLite in WAL mode by default, PostgreSQL by URL, Alembic migrations; every event stored before it's broadcast |
+| Crash safety | Unfinished tasks resume from the last completed step after a restart; approvals survive restarts; stale approvals expire on a schedule |
+| Background work | Celery with late acks and a per-task Redis lock; a high-risk task pauses in the database and frees its worker |
+| Real-time | Server-Sent Events with snapshot-on-connect, keepalives, and replay from the database when a client reconnects; Redis pub/sub so several API replicas share one stream |
+| Auth | API keys mapped to tenants, constant-time comparison, HMAC-signed HttpOnly cookies for the browser, tenant checked on every query |
+| Abuse limits | Fixed-window rate limiting (Redis or in-memory), request size cap, trusted-host and CORS allowlists |
+| Sandboxing | Regex deny-list, then `python -I` in a clean env, or a throwaway Docker container with no network, read-only root, dropped capabilities, and CPU/memory/PID limits |
+| SSRF defence | Scheme, port, and credential checks; DNS resolved and every address checked for global scope; redirects re-validated hop by hop; content-type and size limits |
+| Observability | JSON logs, `X-Request-ID` on every response, Prometheus counters and histograms for HTTP, task events, and model calls; a health endpoint that probes the model provider |
+| Failure reporting | A dead provider fails the task with a message that says what to run, and shows up as a banner before you even submit |
+| Memory | Per-task working memory in process; episodic memory in the database (and a JSON mirror) fed back into planning |
+| API | FastAPI with Pydantic models, dependency-injected tenant context, lifespan startup/shutdown, static file serving |
+| Frontend | Plain HTML/CSS/JS, `EventSource`, no build step, a small Markdown renderer with HTML escaping |
+| Packaging | Multi-service Docker Compose (Postgres, Redis, migrate job, API, worker), non-root image, read-only container filesystem, healthchecks |
+| Testing | 43 pytest cases across unit, lifecycle, HTTP (`TestClient` with SSE), and security; `httpx.MockTransport` for network paths; monkeypatched agents for retry and rework; ruff and pip-audit in CI |
+
 ## Running it
 
 ```bash
