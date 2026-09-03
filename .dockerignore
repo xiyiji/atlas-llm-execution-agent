@@ -1,0 +1,11 @@
+.git
+.venv
+data
+tests
+docs
+*.mov
+*.png
+project.md
+DEPLOY_GUIDE.md
+__pycache__
+.pytest_cache

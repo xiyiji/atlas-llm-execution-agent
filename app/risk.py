@@ -7,7 +7,6 @@ import re
 from . import config
 from .models import PlanStep, RiskAssessment, RiskLevel
 
-
 _HEURISTICS: tuple[tuple[re.Pattern[str], int, str], ...] = (
     (re.compile(r"\b(rm\s+-rf|wipe|destroy|drop\s+(table|database))\b", re.I), 95, "destructive system or data operation"),
     (re.compile(r"\b(delete|erase|remove|purge)\b", re.I), 62, "data deletion or removal"),

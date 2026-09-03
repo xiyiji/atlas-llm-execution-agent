@@ -34,7 +34,7 @@ class Planner(Agent):
         else:
             response = await llm.complete_json(
                 "ATLAS_JSON_PLANNER Return only JSON: {\"steps\":[{\"title\":str,\"agent\":planner|coder|browser,\"detail\":str}]}. Do not include safety or verifier steps.",
-                f"GOAL: {task.goal}\nRECENT EPISODIC MEMORY: {memory.episodic_recall(5)}",
+                f"GOAL: {task.goal}\nRECENT EPISODIC MEMORY: {memory.episodic_recall(5, task.tenant_id)}",
                 1600,
             )
             raw_steps = response.get("steps", []) if isinstance(response, dict) else []
@@ -67,7 +67,7 @@ class Planner(Agent):
             return report
         prompt = "\n\n".join(f"{step.title}\n{step.output}" for step in task.steps)
         return await llm.complete(
-            "Write a concise final Markdown report satisfying the original goal. Use only supplied step outputs; preserve source URLs.",
+            f"Write a concise final Markdown report satisfying the original goal. Use only supplied step outputs; preserve source URLs. {self.guard}",
             f"GOAL: {task.goal}\n\nSTEP OUTPUTS:\n{prompt}\n\nVERIFICATION: {task.verification}",
             1800,
         )

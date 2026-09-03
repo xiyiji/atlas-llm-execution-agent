@@ -67,6 +67,7 @@ class RiskAssessment(BaseModel):
 class Task(BaseModel):
     id: str = Field(default_factory=lambda: new_id("task"))
     goal: str
+    tenant_id: str = "default"
     auto_approve: bool = False
     status: TaskStatus = TaskStatus.QUEUED
     steps: list[PlanStep] = Field(default_factory=list)
@@ -76,6 +77,7 @@ class Task(BaseModel):
     verified: bool | None = None
     verification: str = ""
     rework_count: int = 0
+    approval_decision: bool | None = None
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 
@@ -92,6 +94,7 @@ class ApprovalRequest(BaseModel):
 class Event(BaseModel):
     id: str = Field(default_factory=lambda: new_id("evt"))
     task_id: str
+    tenant_id: str = "default"
     ts: float = Field(default_factory=time.time)
     type: str
     agent: str = ""

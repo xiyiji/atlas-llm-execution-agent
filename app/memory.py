@@ -7,8 +7,8 @@ import threading
 import time
 from collections import defaultdict
 
-from .config import MEMORY_FILE
-
+from .config import MEMORY_FILE, MEMORY_FILE_ENABLED
+from .storage import STORE
 
 _working: dict[str, list[dict]] = defaultdict(list)
 _working_lock = threading.Lock()
@@ -45,18 +45,26 @@ def _read_episodic() -> list[dict]:
         return []
 
 
-def episodic_store(goal: str, outcome: str, summary: str) -> None:
+def episodic_store(goal: str, outcome: str, summary: str, tenant_id: str = "default") -> None:
+    now = time.time()
+    STORE.store_memory(tenant_id, now, goal, outcome, summary)
+    if not MEMORY_FILE_ENABLED:
+        return
     with _episodic_lock:
         items = _read_episodic()
-        items.append({"ts": time.time(), "goal": goal, "outcome": outcome, "summary": summary})
+        items.append({"ts": now, "tenant_id": tenant_id, "goal": goal, "outcome": outcome, "summary": summary})
         MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
         temp = MEMORY_FILE.with_suffix(".tmp")
         temp.write_text(json.dumps(items[-100:], ensure_ascii=False, indent=2), encoding="utf-8")
         temp.replace(MEMORY_FILE)
 
 
-def episodic_recall(limit: int = 5) -> list[dict]:
+def episodic_recall(limit: int = 5, tenant_id: str = "default") -> list[dict]:
     if limit <= 0:
         return []
+    persisted = STORE.recall_memory(tenant_id, limit)
+    if persisted:
+        return persisted
     with _episodic_lock:
-        return _read_episodic()[-limit:]
+        items = [item for item in _read_episodic() if item.get("tenant_id", "default") == tenant_id]
+        return items[-limit:]

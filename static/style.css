@@ -32,6 +32,10 @@ h2 { margin: 0; font-size: 19px; line-height: 1.35; }
 .eyebrow { display: block; margin: 0 0 10px; color: #a1a9b7; text-transform: uppercase; font: 11px var(--mono); letter-spacing: .17em; }
 textarea { width: 100%; resize: vertical; min-height: 130px; border: 0; border-radius: 12px; background: #f2f3f5; padding: 16px; color: var(--ink); outline: 2px solid transparent; }
 textarea:focus { outline-color: rgba(49, 89, 245, .25); }
+.api-key-label { margin-top: 20px; }
+.api-key-label span { text-transform: none; letter-spacing: 0; }
+.api-key { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; color: var(--ink); outline: none; }
+.api-key:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(49, 89, 245, .1); }
 .try { margin-top: 26px; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 9px; }
 .suggestions button { border: 1px solid var(--line); background: white; color: var(--muted); border-radius: 99px; padding: 8px 14px; font-size: 13px; }

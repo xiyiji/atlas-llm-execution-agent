@@ -1,6 +1,13 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { task: null, source: null, events: [], activeAgent: "" };
 
+async function ensureSession() {
+  const key = $("#apiKey").value.trim();
+  if (!key) return;
+  const response = await fetch("/api/session", {method: "POST", headers: {"X-API-Key": key}});
+  if (!response.ok) throw new Error("Invalid production API key");
+}
+
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
 }
@@ -29,7 +36,10 @@ async function loadHealth() {
 
 async function loadMemory() {
   try {
-    const items = await fetch("/api/memory?limit=8").then(r => r.json());
+    await ensureSession();
+    const response = await fetch("/api/memory?limit=8");
+    if (!response.ok) throw new Error("Memory unavailable");
+    const items = await response.json();
     $("#memoryList").innerHTML = items.length ? items.slice().reverse().map(item => {
       const date = new Date(item.ts * 1000);
       return `<article class="memory-item"><span class="meta">${escapeHtml(item.outcome)}</span><time>${date.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</time><p>${escapeHtml(item.goal)}</p></article>`;
@@ -114,7 +124,7 @@ function connect(taskId) {
     state.task = JSON.parse(message.data).task;
     renderTask();
   });
-  const types = ["task.created", "task.status", "agent.started", "plan.created", "risk.assessed", "approval.required", "approval.auto", "approval.resolved", "approval.timeout", "step.started", "step.retry", "step.completed", "step.failed", "rework.started", "task.completed", "task.failed", "stream.end"];
+  const types = ["task.created", "task.queued", "task.recovered", "task.status", "agent.started", "plan.created", "risk.assessed", "approval.required", "approval.auto", "approval.resolved", "approval.timeout", "step.started", "step.retry", "step.completed", "step.failed", "rework.started", "task.completed", "task.failed", "stream.end"];
   types.forEach(type => source.addEventListener(type, message => applyEvent(JSON.parse(message.data))));
   source.onerror = () => { if (state.source) setConnection(false, "Reconnecting"); };
   source.onopen = () => loadHealth();
@@ -129,6 +139,7 @@ async function runTask() {
   $("#activity").innerHTML = '<div class="empty">Connecting to the event stream…</div>';
   $("#report").innerHTML = '<div class="empty">Committee execution in progress…</div>';
   try {
+    await ensureSession();
     const response = await fetch("/api/tasks", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({goal, auto_approve: $("#autoApprove").checked})});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Task could not be created");

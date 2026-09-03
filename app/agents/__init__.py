@@ -7,7 +7,6 @@ from .planner import Planner
 from .safety import Safety
 from .verifier import Verifier
 
-
 COMMITTEE: dict[str, Agent] = {
     "planner": Planner(),
     "safety": Safety(),

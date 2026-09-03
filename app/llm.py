@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import httpx
+from prometheus_client import Counter, Histogram
 
 from . import config
+
+LLM_CALLS = Counter("atlas_llm_calls_total", "Model calls by provider and outcome", ["provider", "outcome"])
+LLM_LATENCY = Histogram("atlas_llm_call_duration_seconds", "Model call latency", ["provider"])
 
 
 _provider: str | None = None
@@ -121,22 +126,33 @@ def _extract(text: str, marker: str) -> str:
 async def complete(system: str, prompt: str, max_tokens: int = 1200) -> str:
     global _provider, _last_error
     chosen = provider()
+    started = time.perf_counter()
     try:
         if chosen == "demo":
+            LLM_CALLS.labels("demo", "ok").inc()
             return _demo(system, prompt)
-        if chosen == "anthropic":
-            return await _anthropic(system, prompt, max_tokens)
-        if chosen == "cerebras":
-            return await _openai_compat("https://api.cerebras.ai/v1", config.CEREBRAS_API_KEY, config.CEREBRAS_MODEL, system, prompt, max_tokens)
-        if chosen == "gemini":
-            return await _openai_compat("https://generativelanguage.googleapis.com/v1beta/openai", config.GEMINI_API_KEY, config.GEMINI_MODEL, system, prompt, max_tokens)
-        if chosen == "groq":
-            return await _openai_compat("https://api.groq.com/openai/v1", config.GROQ_API_KEY, config.GROQ_MODEL, system, prompt, max_tokens)
-        return await _openai_compat(f"{config.OLLAMA_BASE_URL}/v1", "", config.OLLAMA_MODEL, system, prompt, max_tokens)
+        text = await _live(chosen, system, prompt, max_tokens)
+        LLM_CALLS.labels(chosen, "ok").inc()
+        return text
     except Exception as exc:
+        LLM_CALLS.labels(chosen, "error").inc()
         _last_error = f"{chosen}: {type(exc).__name__}: {exc}"
         _provider = "demo"
         return _demo(system, prompt)
+    finally:
+        LLM_LATENCY.labels(chosen).observe(time.perf_counter() - started)
+
+
+async def _live(chosen: str, system: str, prompt: str, max_tokens: int) -> str:
+    if chosen == "anthropic":
+        return await _anthropic(system, prompt, max_tokens)
+    if chosen == "cerebras":
+        return await _openai_compat("https://api.cerebras.ai/v1", config.CEREBRAS_API_KEY, config.CEREBRAS_MODEL, system, prompt, max_tokens)
+    if chosen == "gemini":
+        return await _openai_compat("https://generativelanguage.googleapis.com/v1beta/openai", config.GEMINI_API_KEY, config.GEMINI_MODEL, system, prompt, max_tokens)
+    if chosen == "groq":
+        return await _openai_compat("https://api.groq.com/openai/v1", config.GROQ_API_KEY, config.GROQ_MODEL, system, prompt, max_tokens)
+    return await _openai_compat(f"{config.OLLAMA_BASE_URL}/v1", "", config.OLLAMA_MODEL, system, prompt, max_tokens)
 
 
 def _parse_json(text: str) -> dict[str, Any] | list[Any]:

@@ -1,10 +1,13 @@
 import asyncio
 
-from app import llm, risk
-from app.models import PlanStep, TaskStatus
+from app import config, llm, risk
 from app.agents import COMMITTEE
+from app.auth import issue_session, tenant_context, verify_session
+from app.models import Event, PlanStep, Task, TaskStatus
 from app.orchestrator import Orchestrator
+from app.storage import Store
 from app.tools.code_exec import run_python
+from app.tools.web import _safe_public_url
 
 
 def test_json_tolerance():
@@ -118,3 +121,36 @@ def test_verifier_triggers_only_one_rework_round():
             verifier.run = original
 
     asyncio.run(scenario())
+
+
+def test_store_persists_and_isolates_tenants(tmp_path):
+    store = Store(f"sqlite:///{tmp_path / 'atlas.db'}")
+    task = Task(goal="persist me", tenant_id="tenant-a")
+    store.save_task(task)
+    event = Event(task_id=task.id, tenant_id="tenant-a", type="task.created")
+    store.save_event(event)
+
+    assert store.get_task(task.id, "tenant-a") == task
+    assert store.get_task(task.id, "tenant-b") is None
+    assert store.events_after(task.id, "tenant-a")[0]["id"] == event.id
+    assert store.events_after(task.id, "tenant-b") == []
+
+
+def test_signed_session_and_api_key_auth(monkeypatch):
+    monkeypatch.setattr(config, "AUTH_REQUIRED", True)
+    monkeypatch.setattr(config, "API_KEYS", "alpha:secret-a,beta:secret-b")
+    monkeypatch.setattr(config, "SESSION_SECRET", "x" * 40)
+    token = issue_session("alpha")
+    assert verify_session(token) == "alpha"
+    assert verify_session(token + "broken") is None
+
+    context = asyncio.run(tenant_context(x_api_key="secret-b", atlas_session=None))
+    assert context.tenant_id == "beta"
+    session_context = asyncio.run(tenant_context(x_api_key=None, atlas_session=token))
+    assert session_context.tenant_id == "alpha"
+
+
+def test_ssrf_guard_rejects_local_networks():
+    assert not asyncio.run(_safe_public_url("http://127.0.0.1/secret"))
+    assert not asyncio.run(_safe_public_url("http://[::1]/secret"))
+    assert not asyncio.run(_safe_public_url("file:///etc/passwd"))

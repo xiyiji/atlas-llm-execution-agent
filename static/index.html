@@ -25,6 +25,8 @@
           <button type="button" data-goal="Write and run code to compute basic statistics on a sample time series and report the results">Compute in sandbox</button>
           <button type="button" data-goal="Plan how to delete stale records from the production database and send a summary email to the team">High-risk plan</button>
         </div>
+        <label class="eyebrow api-key-label" for="apiKey">API key <span>(production only)</span></label>
+        <input id="apiKey" class="api-key" type="password" autocomplete="off" placeholder="Stored only in this page session">
         <label class="switch-row"><input id="autoApprove" type="checkbox"><span class="switch"></span><span>Auto-approve high-risk plans</span></label>
         <button class="run" id="runButton" type="button">Run task</button>
         <p class="form-error" id="formError" role="alert"></p>

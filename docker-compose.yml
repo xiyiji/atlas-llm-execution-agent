@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: atlas
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    user: "10001:10001"
+    command: ["alembic", "upgrade", "head"]
+    environment: &atlas-env
+      ATLAS_ENV: production
+      FORCE_DEMO: ${FORCE_DEMO:-1}
+      AUTH_REQUIRED: "1"
+      ATLAS_API_KEYS: ${ATLAS_API_KEYS:?Set ATLAS_API_KEYS as tenant:key}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      DATABASE_URL: postgresql+psycopg://atlas:${POSTGRES_PASSWORD}@postgres:5432/atlas
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
+      EXECUTION_BACKEND: celery
+      SANDBOX_BACKEND: docker
+      AUDIT_FILE_ENABLED: "0"
+      MEMORY_FILE_ENABLED: "0"
+      TRUSTED_HOSTS: localhost,127.0.0.1,atlas-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    environment: *atlas-env
+    ports:
+      - "8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    user: root
+    command: ["celery", "-A", "app.task_queue:celery_app", "worker", "--beat", "--loglevel=INFO", "--concurrency=2"]
+    environment: *atlas-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
