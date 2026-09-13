@@ -59,10 +59,14 @@ class Orchestrator:
         return STORE.list_tasks(tenant_id=tenant_id, limit=limit)
 
     def resolve_approval(self, task_id: str, approved: bool, tenant_id: str = "default") -> bool:
-        task = self.get(task_id, tenant_id)
-        if not task or task.status != TaskStatus.AWAITING_APPROVAL or task.approval_decision is not None:
+        task = STORE.decide_approval(task_id, tenant_id, approved)
+        if task is None:
             return False
-        task.approval_decision = bool(approved)
+        live = self.tasks.get(task.id)
+        if live is not None and live.tenant_id == tenant_id:
+            live.approval_decision = task.approval_decision
+            live.updated_at = task.updated_at
+            task = live
         self.tasks[task.id] = task
         self._emit(task, "approval.resolved", "safety", "Plan approved" if approved else "Plan denied", {"approved": approved})
         if config.EXECUTION_BACKEND == "celery":
@@ -102,10 +106,16 @@ class Orchestrator:
         now = now or time.time()
         expired: list[str] = []
         for task in STORE.list_tasks(statuses=[TaskStatus.AWAITING_APPROVAL.value], limit=500):
-            if task.approval_decision is not None or now - task.updated_at < config.APPROVAL_TIMEOUT_SECONDS:
+            claimed = STORE.expire_approval(task.id, task.tenant_id, now - config.APPROVAL_TIMEOUT_SECONDS)
+            if claimed is None:
                 continue
+            task = claimed
+            live = self.tasks.get(task.id)
+            if live is not None and live.tenant_id == task.tenant_id:
+                live.approval_decision = task.approval_decision
+                live.updated_at = task.updated_at
+                task = live
             self.tasks[task.id] = task
-            task.approval_decision = False
             self._emit(task, "approval.timeout", "safety", "Approval window expired", {})
             self._deny(task, "Approval window expired before a reviewer decided.")
             expired.append(task.id)
@@ -153,8 +163,8 @@ class Orchestrator:
     def _emit(self, task: Task, type_: str, agent: str, message: str, data: dict | None = None) -> Event:
         task.updated_at = time.time()
         event = Event(task_id=task.id, tenant_id=task.tenant_id, type=type_, agent=agent, message=message, data=data or {})
-        STORE.save_task(task)
-        audit.record(event)
+        STORE.save_task_and_event(task, event)
+        audit.record(event, persist=False)
         BUS.publish(event)
         TASK_EVENTS.labels(type_, agent or "system").inc()
         return event
@@ -177,7 +187,7 @@ class Orchestrator:
 
     def _request_approval(self, task: Task) -> None:
         task.approval_decision = None
-        self._set_status(task, TaskStatus.AWAITING_APPROVAL)
+        task.status = TaskStatus.AWAITING_APPROVAL
         self._emit(
             task,
             "approval.required",
@@ -237,6 +247,13 @@ class Orchestrator:
         total_attempts = config.MAX_STEP_RETRIES + 1
         for attempt in range(1, total_attempts + 1):
             step.attempts += 1
+            self._emit(
+                task,
+                "step.attempted",
+                step.agent,
+                f"Starting attempt {step.attempts}",
+                {"step_id": step.id, "attempts": step.attempts},
+            )
             try:
                 step.output = await agent.run(task, step)
                 step.error = ""

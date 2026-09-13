@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 
-from sqlalchemy import Float, Index, String, Text, create_engine, delete, inspect, select
+from sqlalchemy import Float, Index, String, Text, create_engine, delete, inspect, select, update
 from sqlalchemy import event as sa_event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -108,24 +109,108 @@ class Store:
 
     def save_task(self, task: Task) -> None:
         self.initialize()
-        payload = task.model_dump_json()
         with self.sessions.begin() as session:
-            record = session.get(TaskRecord, task.id)
+            self._upsert_task(session, task)
+
+    @staticmethod
+    def _upsert_task(session, task: Task) -> None:
+        payload = task.model_dump_json()
+        record = session.get(TaskRecord, task.id)
+        if record is None:
+            session.add(TaskRecord(
+                id=task.id,
+                tenant_id=task.tenant_id,
+                status=task.status.value,
+                payload=payload,
+                created_at=task.created_at,
+                updated_at=task.updated_at,
+            ))
+            return
+        record.tenant_id = task.tenant_id
+        record.status = task.status.value
+        record.payload = payload
+        record.updated_at = task.updated_at
+
+    @staticmethod
+    def _add_event(session, event: Event) -> None:
+        if session.get(EventRecord, event.id) is None:
+            session.add(EventRecord(
+                id=event.id,
+                task_id=event.task_id,
+                tenant_id=event.tenant_id,
+                ts=event.ts,
+                type=event.type,
+                agent=event.agent,
+                message=event.message,
+                data=json.dumps(event.data, ensure_ascii=False),
+            ))
+
+    def save_task_and_event(self, task: Task, event: Event) -> None:
+        """Commit state and its audit event in one database transaction."""
+        self.initialize()
+        with self.sessions.begin() as session:
+            self._upsert_task(session, task)
+            self._add_event(session, event)
+
+    def decide_approval(self, task_id: str, tenant_id: str, approved: bool) -> Task | None:
+        """Atomically claim an approval decision using a row-level lock where supported."""
+        self.initialize()
+        statement = (
+            select(TaskRecord)
+            .where(TaskRecord.id == task_id, TaskRecord.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        with self.sessions.begin() as session:
+            record = session.scalar(statement)
             if record is None:
-                record = TaskRecord(
-                    id=task.id,
-                    tenant_id=task.tenant_id,
-                    status=task.status.value,
-                    payload=payload,
-                    created_at=task.created_at,
-                    updated_at=task.updated_at,
+                return None
+            task = Task.model_validate_json(record.payload)
+            if task.status.value != "awaiting_approval" or task.approval_decision is not None:
+                return None
+            previous_updated_at = record.updated_at
+            task.approval_decision = bool(approved)
+            task.updated_at = time.time()
+            result = session.execute(
+                update(TaskRecord)
+                .where(
+                    TaskRecord.id == task_id,
+                    TaskRecord.tenant_id == tenant_id,
+                    TaskRecord.status == "awaiting_approval",
+                    TaskRecord.updated_at == previous_updated_at,
                 )
-                session.add(record)
-            else:
-                record.tenant_id = task.tenant_id
-                record.status = task.status.value
-                record.payload = payload
-                record.updated_at = task.updated_at
+                .values(payload=task.model_dump_json(), updated_at=task.updated_at)
+            )
+            return task if result.rowcount == 1 else None
+
+    def expire_approval(self, task_id: str, tenant_id: str, cutoff: float) -> Task | None:
+        """Atomically claim an expired approval so it cannot race with a reviewer."""
+        self.initialize()
+        statement = (
+            select(TaskRecord)
+            .where(TaskRecord.id == task_id, TaskRecord.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        with self.sessions.begin() as session:
+            record = session.scalar(statement)
+            if record is None:
+                return None
+            task = Task.model_validate_json(record.payload)
+            if task.status.value != "awaiting_approval" or task.approval_decision is not None or task.updated_at >= cutoff:
+                return None
+            previous_updated_at = record.updated_at
+            task.approval_decision = False
+            task.updated_at = time.time()
+            result = session.execute(
+                update(TaskRecord)
+                .where(
+                    TaskRecord.id == task_id,
+                    TaskRecord.tenant_id == tenant_id,
+                    TaskRecord.status == "awaiting_approval",
+                    TaskRecord.updated_at == previous_updated_at,
+                )
+                .values(payload=task.model_dump_json(), updated_at=task.updated_at)
+            )
+            return task if result.rowcount == 1 else None
 
     def get_task(self, task_id: str, tenant_id: str | None = None) -> Task | None:
         self.initialize()
@@ -148,17 +233,7 @@ class Store:
     def save_event(self, event: Event) -> None:
         self.initialize()
         with self.sessions.begin() as session:
-            if session.get(EventRecord, event.id) is None:
-                session.add(EventRecord(
-                    id=event.id,
-                    task_id=event.task_id,
-                    tenant_id=event.tenant_id,
-                    ts=event.ts,
-                    type=event.type,
-                    agent=event.agent,
-                    message=event.message,
-                    data=json.dumps(event.data, ensure_ascii=False),
-                ))
+            self._add_event(session, event)
 
     def events_after(self, task_id: str, tenant_id: str, ts: float = 0.0, limit: int = 500) -> list[dict]:
         self.initialize()

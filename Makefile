@@ -7,7 +7,7 @@ test:
 	pytest
 
 lint:
-	ruff check app tests
+	ruff check app tests scripts
 
 run:
 	./run.sh

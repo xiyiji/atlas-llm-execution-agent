@@ -1,6 +1,7 @@
 """Sandbox and retrieval hardening."""
 
 import asyncio
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +13,36 @@ def test_sandbox_kills_runaway_code(monkeypatch):
     monkeypatch.setattr(code_exec, "CODE_TIMEOUT_SECONDS", 1)
     result = asyncio.run(code_exec.run_python("while True:\n    pass"))
     assert not result["ok"] and "Timed out" in result["stderr"]
+
+
+def test_docker_sandbox_streams_code_without_host_path_mount(monkeypatch, tmp_path):
+    captured: dict = {}
+
+    class Process:
+        returncode = 0
+
+        async def communicate(self, stdin=None):
+            captured["stdin"] = stdin
+            return b"ok\n", b""
+
+        def kill(self):
+            self.returncode = -9
+
+    async def create(*args, **_kwargs):
+        captured["args"] = args
+        return Process()
+
+    script = tmp_path / "main.py"
+    script.write_text("print('ok')", encoding="utf-8")
+    monkeypatch.setattr(code_exec.shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(code_exec.asyncio, "create_subprocess_exec", create)
+    result = asyncio.run(code_exec._run_docker(Path(script)))
+
+    assert result["ok"]
+    assert captured["stdin"] == b"print('ok')"
+    assert "--interactive" in captured["args"]
+    assert "--volume" not in captured["args"]
+    assert captured["args"][-1] == "-"
 
 
 @pytest.mark.parametrize(

@@ -1,8 +1,12 @@
 import asyncio
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from app import config, llm, risk
 from app.agents import COMMITTEE
+from app.agents.verifier import Verifier
 from app.auth import issue_session, tenant_context, verify_session
 from app.models import Event, PlanStep, Task, TaskStatus
 from app.orchestrator import Orchestrator
@@ -14,6 +18,11 @@ from app.tools.web import _safe_public_url
 def test_json_tolerance():
     assert llm._parse_json("```json\n{\"ok\": true}\n```") == {"ok": True}
     assert llm._parse_json("prefix [1, 2] suffix") == [1, 2]
+
+
+def test_ids_use_full_uuid_entropy():
+    task = Task(goal="id check")
+    assert len(task.id.removeprefix("task_")) == 32
 
 
 def test_risk_floor():
@@ -202,3 +211,15 @@ def test_json_mode_is_requested_from_openai_compatible_providers(monkeypatch):
     assert asyncio.run(llm.complete_json("sys", "p")) == {"ok": True}
     assert payloads[0]["response_format"] == {"type": "json_object"}
     assert payloads[0]["model"] == config.OLLAMA_MODEL
+
+
+def test_verifier_rejects_string_booleans(monkeypatch):
+    async def invalid(*_args, **_kwargs):
+        return {"passed": "false", "notes": "not actually a boolean"}
+
+    monkeypatch.setattr(llm, "complete_json", invalid)
+    task = Task(goal="verify strictly")
+    step = PlanStep(title="Verify", agent="verifier")
+    task.steps = [step]
+    with pytest.raises(ValidationError):
+        asyncio.run(Verifier().run(task, step))

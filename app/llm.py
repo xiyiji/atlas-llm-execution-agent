@@ -27,6 +27,9 @@ LLM_LATENCY = Histogram("atlas_llm_call_duration_seconds", "Model call latency",
 
 _provider: str | None = None
 _last_error = ""
+_probe_cache_key = ""
+_probe_cache_at = 0.0
+_probe_cache: dict[str, Any] | None = None
 
 
 class ProviderError(RuntimeError):
@@ -207,8 +210,12 @@ def _describe(exc: Exception) -> str:
 
 
 async def probe() -> dict:
-    """Cheap readiness check for the configured provider, used by /api/health and at startup."""
+    """Validate provider connectivity and credentials, with a short readiness cache."""
+    global _probe_cache_key, _probe_cache_at, _probe_cache
     chosen = provider()
+    cache_key = f"{chosen}:{model_name()}"
+    if _probe_cache is not None and _probe_cache_key == cache_key and time.monotonic() - _probe_cache_at < config.PROVIDER_PROBE_TTL_SECONDS:
+        return dict(_probe_cache)
     result = {"provider": chosen, "model": model_name(), "ready": True, "problem": "", "hint": ""}
     if chosen == "demo":
         return result
@@ -221,17 +228,38 @@ async def probe() -> dict:
             wanted = config.OLLAMA_MODEL
             if wanted not in names and f"{wanted}:latest" not in names:
                 raise RuntimeError(f"model '{wanted}' not found (available: {', '.join(sorted(names)) or 'none'})")
-        elif not {
+        else:
+            api_key = {
             "anthropic": config.ANTHROPIC_API_KEY,
             "cerebras": config.CEREBRAS_API_KEY,
             "gemini": config.GEMINI_API_KEY,
             "groq": config.GROQ_API_KEY,
-        }.get(chosen):
-            raise RuntimeError("API key is empty")
+            }.get(chosen, "")
+            if not api_key:
+                raise RuntimeError("API key is empty")
+            await _probe_hosted(chosen, api_key)
     except Exception as exc:
         detail = _describe(exc)
         result.update(ready=False, problem=detail, hint=_hint(chosen, detail))
+    _probe_cache_key = cache_key
+    _probe_cache_at = time.monotonic()
+    _probe_cache = dict(result)
     return result
+
+
+async def _probe_hosted(chosen: str, api_key: str) -> None:
+    endpoints = {
+        "anthropic": "https://api.anthropic.com/v1/models?limit=1",
+        "cerebras": "https://api.cerebras.ai/v1/models",
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/models",
+        "groq": "https://api.groq.com/openai/v1/models",
+    }
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if chosen == "anthropic":
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    async with httpx.AsyncClient(timeout=5) as client:
+        response = await client.get(endpoints[chosen], headers=headers)
+        response.raise_for_status()
 
 
 async def _live(chosen: str, system: str, prompt: str, max_tokens: int, json_mode: bool) -> str:

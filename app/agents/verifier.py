@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import llm, memory
-from ..models import PlanStep, Task
+from ..models import PlanStep, Task, VerificationDecision
 from .base import Agent
 
 
@@ -17,9 +17,8 @@ class Verifier(Agent):
             f"ATLAS_JSON_VERIFIER Judge whether OUTPUTS satisfy GOAL. Return only JSON like {{\"passed\": true, \"notes\": \"one or two sentences on coverage and consistency\"}}. Fail incomplete or unsafe results. {self.guard}",
             f"GOAL: {task.goal}\nOUTPUTS:\n{outputs}",
         )
-        passed = bool(response.get("passed", False)) if isinstance(response, dict) else False
-        notes = str(response.get("notes", "Verifier returned no notes")) if isinstance(response, dict) else "Verifier returned invalid output"
-        task.verified = passed
-        task.verification = notes
-        memory.working_write(task.id, self.name, notes)
-        return notes
+        decision = VerificationDecision.model_validate(response, strict=True)
+        task.verified = decision.passed
+        task.verification = decision.notes
+        memory.working_write(task.id, self.name, decision.notes)
+        return decision.notes

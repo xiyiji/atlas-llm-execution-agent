@@ -28,7 +28,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
 
     async def dispatch(self, request: Request, call_next):
-        if not request.url.path.startswith("/api/") or request.url.path == "/api/health":
+        if not request.url.path.startswith("/api/") or request.url.path in {"/api/health", "/api/live", "/api/ready"}:
             return await call_next(request)
         identity = self._identity(request)
         allowed, remaining = await self._check(identity)

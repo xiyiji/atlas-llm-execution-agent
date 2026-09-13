@@ -158,6 +158,17 @@ def test_stale_approvals_expire(monkeypatch):
     assert any(row["type"] == "approval.timeout" for row in STORE.events_after(task.id, "expiry"))
 
 
+def test_approval_decision_is_single_writer():
+    task = Task(goal="Delete records", tenant_id="atomic", status=TaskStatus.AWAITING_APPROVAL, risk=_high_risk())
+    STORE.save_task(task)
+
+    decided = STORE.decide_approval(task.id, "atomic", False)
+    assert decided is not None and decided.approval_decision is False
+    assert STORE.decide_approval(task.id, "atomic", True) is None
+    assert STORE.expire_approval(task.id, "atomic", time.time() + 1) is None
+    assert STORE.get_task(task.id, "atomic").approval_decision is False
+
+
 def test_concurrent_tasks_complete_and_memory_file_stays_valid():
     async def scenario():
         orchestrator = Orchestrator()

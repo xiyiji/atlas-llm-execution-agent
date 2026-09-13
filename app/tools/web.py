@@ -49,7 +49,7 @@ async def search(query: str, max_results: int = 5) -> list[dict]:
     if llm.is_demo():
         return [{**item, "snippet": f"{item['snippet']} Query: {query[:120]}"} for item in _DEMO_RESULTS[:max_results]]
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AtlasMVP/0.1)"}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; Atlas/1.0)"}
         async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=headers) as client:
             response = await client.get("https://html.duckduckgo.com/html/", params={"q": query})
             response.raise_for_status()
@@ -69,7 +69,7 @@ async def fetch_page(url: str, max_chars: int = 3500) -> str:
     if not await _safe_public_url(url):
         return "Page unavailable: invalid URL"
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AtlasMVP/0.1)"}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; Atlas/1.0)"}
         current = url
         async with httpx.AsyncClient(timeout=15, follow_redirects=False, headers=headers) as client:
             for _ in range(4):

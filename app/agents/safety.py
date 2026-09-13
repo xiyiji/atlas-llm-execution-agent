@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import llm, risk
-from ..models import PlanStep, RiskAssessment, Task
+from ..models import PlanStep, RiskAssessment, SafetyDecision, Task
 from .base import Agent
 
 
@@ -16,8 +16,5 @@ class Safety(Agent):
             "ATLAS_JSON_SAFETY Return only JSON with integer score 0-100 and string-array factors.",
             f"GOAL: {task.goal}\nSTEPS: {[step.model_dump() for step in steps]}",
         )
-        score = response.get("score", 0) if isinstance(response, dict) else 0
-        factors = response.get("factors", []) if isinstance(response, dict) else []
-        if not isinstance(factors, list):
-            factors = [str(factors)]
-        return risk.merge(task.goal, steps, int(score or 0), [str(item) for item in factors])
+        decision = SafetyDecision.model_validate(response, strict=True)
+        return risk.merge(task.goal, steps, decision.score, decision.factors)

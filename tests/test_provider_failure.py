@@ -105,3 +105,19 @@ def test_optional_fallback_keeps_old_behaviour(monkeypatch):
     monkeypatch.setattr(config, "LLM_FALLBACK_TO_DEMO", True)
     text = asyncio.run(llm.complete("sys", "prompt"))
     assert text and llm.last_error().startswith("ollama: HTTP 404")
+
+
+def test_hosted_provider_probe_validates_credentials(monkeypatch):
+    monkeypatch.setattr(llm, "_provider", "groq")
+    monkeypatch.setattr(llm, "_probe_cache", None)
+    monkeypatch.setattr(config, "GROQ_API_KEY", "invalid-key")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer invalid-key"
+        return httpx.Response(401, json={"error": {"message": "invalid api key"}})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(llm.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    status = asyncio.run(llm.probe())
+    assert status["ready"] is False
+    assert "401" in status["problem"]

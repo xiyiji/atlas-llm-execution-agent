@@ -12,8 +12,9 @@ from .storage import STORE
 _lock = threading.Lock()
 
 
-def record(event: Event) -> None:
-    STORE.save_event(event)
+def record(event: Event, *, persist: bool = True) -> None:
+    if persist:
+        STORE.save_event(event)
     if not AUDIT_FILE_ENABLED:
         return
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)

@@ -8,14 +8,14 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 def new_id(prefix: str) -> str:
-    """Return a compact, prefixed identifier suitable for logs and URLs."""
-    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+    """Return a collision-resistant, prefixed identifier suitable for logs and URLs."""
+    return f"{prefix}_{uuid.uuid4().hex}"
 
 
 class TaskStatus(str, Enum):
@@ -89,6 +89,36 @@ class CreateTaskRequest(BaseModel):
 
 class ApprovalRequest(BaseModel):
     approved: bool
+
+
+class VerificationDecision(BaseModel):
+    """Strict contract for model-generated verification decisions."""
+
+    passed: bool
+    notes: str = Field(min_length=1, max_length=4000)
+
+
+class PlannedStep(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    agent: Literal["planner", "coder", "browser"]
+    detail: str = Field(default="", max_length=2000)
+
+
+class PlanProposal(BaseModel):
+    steps: list[PlannedStep] = Field(min_length=1, max_length=6)
+
+
+class SafetyDecision(BaseModel):
+    score: int = Field(ge=0, le=100)
+    factors: list[str] = Field(default_factory=list, max_length=20)
+
+
+class CodeProposal(BaseModel):
+    code: str = Field(min_length=1, max_length=50_000)
+
+
+class SearchProposal(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
 
 
 class Event(BaseModel):

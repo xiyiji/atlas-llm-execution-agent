@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -80,8 +80,7 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/api/health")
-async def health() -> dict:
+async def _health_payload() -> dict:
     checks: dict[str, bool] = {"database": False, "event_bus": False}
     try:
         checks["database"] = await asyncio.to_thread(STORE.healthcheck)
@@ -101,6 +100,25 @@ async def health() -> dict:
         "execution_backend": config.EXECUTION_BACKEND,
         "auth_required": config.AUTH_REQUIRED,
     }
+
+
+@app.get("/api/live")
+async def live() -> dict:
+    """Process liveness probe; intentionally independent of downstream services."""
+    return {"ok": True}
+
+
+@app.get("/api/ready")
+async def ready() -> JSONResponse:
+    """Readiness probe used by the container platform."""
+    payload = await _health_payload()
+    return JSONResponse(payload, status_code=200 if payload["ok"] else 503)
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    """Detailed dependency diagnostics retained for operators and the UI."""
+    return await _health_payload()
 
 
 @app.post("/api/session")
@@ -168,7 +186,14 @@ async def events(task_id: str, request: Request, tenant: TenantContext = Depends
         try:
             yield _sse("snapshot", {"task": task.model_dump(mode="json")})
             if task.status.value in {"completed", "failed", "denied"}:
-                yield _sse("stream.end", {"task_id": task.id, "status": task.status.value})
+                terminal = Event(
+                    task_id=task.id,
+                    tenant_id=task.tenant_id,
+                    type="stream.end",
+                    message="Task stream already complete",
+                    data={"status": task.status.value},
+                )
+                yield _sse("stream.end", terminal.model_dump(mode="json"))
                 return
             while True:
                 if await request.is_disconnected():

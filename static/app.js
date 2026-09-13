@@ -38,7 +38,7 @@ async function loadHealth() {
   try {
     const health = await fetch("/api/health").then(r => r.json());
     const ready = health.checks?.model_provider !== false;
-    setConnection(ready, health.demo ? "Live · demo" : ready ? `Live · ${health.provider}` : `${health.provider} not ready`);
+    setConnection(ready, health.demo ? "Live · deterministic" : ready ? `Live · ${health.provider}` : `${health.provider} not ready`);
     renderBanner(health);
     const needsKey = Boolean(health.auth_required);
     $(".api-key-label").hidden = !needsKey;
@@ -123,12 +123,17 @@ function applyEvent(event) {
   if (["step.completed", "step.failed", "provider.error", "risk.assessed", "plan.created", "task.status", "task.completed", "task.failed", "approval.required"].includes(event.type)) refreshTask();
   if (["step.completed", "step.failed", "task.completed", "task.failed", "stream.end"].includes(event.type)) state.activeAgent = "";
   if (event.type === "stream.end") {
-    state.source?.close();
-    state.source = null;
-    $("#runButton").disabled = false;
-    refreshTask().then(loadMemory);
+    finishStream();
   }
   renderTask();
+}
+
+function finishStream() {
+  state.source?.close();
+  state.source = null;
+  state.activeAgent = "";
+  $("#runButton").disabled = false;
+  refreshTask().then(loadMemory);
 }
 
 function connect(taskId) {
@@ -138,8 +143,17 @@ function connect(taskId) {
   source.addEventListener("snapshot", message => {
     state.task = JSON.parse(message.data).task;
     renderTask();
+    if (["completed", "failed", "denied"].includes(state.task.status)) {
+      addEvent({
+        type: "stream.end",
+        agent: "system",
+        message: `Task ${state.task.status}`,
+        ts: state.task.updated_at,
+      });
+      finishStream();
+    }
   });
-  const types = ["task.created", "task.queued", "task.recovered", "task.status", "agent.started", "plan.created", "risk.assessed", "approval.required", "approval.auto", "approval.resolved", "approval.timeout", "step.started", "step.retry", "step.completed", "step.failed", "provider.error", "rework.started", "task.completed", "task.failed", "stream.end"];
+  const types = ["task.created", "task.queued", "task.recovered", "task.status", "agent.started", "plan.created", "risk.assessed", "approval.required", "approval.auto", "approval.resolved", "approval.timeout", "step.started", "step.attempted", "step.retry", "step.completed", "step.failed", "provider.error", "rework.started", "task.completed", "task.failed", "stream.end"];
   types.forEach(type => source.addEventListener(type, message => applyEvent(JSON.parse(message.data))));
   source.onerror = () => { if (state.source) setConnection(false, "Reconnecting"); };
   source.onopen = () => loadHealth();

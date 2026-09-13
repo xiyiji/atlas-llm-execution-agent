@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import llm, memory
-from ..models import PlanStep, Task
+from ..models import PlanProposal, PlanStep, Task
 from .base import Agent
 
 
@@ -43,19 +43,8 @@ class Planner(Agent):
                 f"GOAL: {task.goal}\nRECENT EPISODIC MEMORY: {memory.episodic_recall(5, task.tenant_id)}",
                 1600,
             )
-            raw_steps = response.get("steps", []) if isinstance(response, dict) else []
-            steps = []
-            for raw in raw_steps[:8]:
-                if not isinstance(raw, dict):
-                    continue
-                agent = str(raw.get("agent", "planner")).lower()
-                if agent not in {"planner", "coder", "browser"}:
-                    agent = "planner"
-                title = str(raw.get("title", "")).strip()
-                if title:
-                    steps.append(PlanStep(title=title, agent=agent, detail=str(raw.get("detail", ""))))
-            if not steps:
-                steps = [PlanStep(title=f"Analyze and satisfy: {task.goal}", agent="planner")]
+            proposal = PlanProposal.model_validate(response, strict=True)
+            steps = [PlanStep(title=item.title, agent=item.agent, detail=item.detail) for item in proposal.steps]
             steps.append(PlanStep(title="Verify outputs against the goal", agent="verifier", detail="Check requirement coverage and consistency."))
         memory.working_write(task.id, self.name, f"Created a {len(steps)}-step task graph")
         return steps

@@ -97,6 +97,8 @@ def test_approval_flow_over_http_with_sse(client):
         events = _sse_events(stream.read().decode())
     assert events[0][0] == "snapshot" and events[0][1]["task"]["status"] == "completed"
     assert events[-1][0] == "stream.end"
+    assert events[-1][1]["type"] == "stream.end"
+    assert events[-1][1]["tenant_id"] == "alpha"
 
 
 def test_sse_streams_live_events_until_end(client, monkeypatch):
@@ -143,3 +145,11 @@ def test_security_headers_and_request_id(client):
     assert "Content-Security-Policy" in response.headers
     body = response.json()
     assert body["ok"] and body["checks"]["database"]
+
+
+def test_readiness_returns_503_when_a_dependency_is_down(client, monkeypatch):
+    monkeypatch.setattr(main.STORE, "healthcheck", lambda: False)
+    response = client.get("/api/ready")
+    assert response.status_code == 503
+    assert response.json()["ok"] is False
+    assert client.get("/api/live").status_code == 200

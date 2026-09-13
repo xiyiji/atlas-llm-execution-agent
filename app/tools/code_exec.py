@@ -1,4 +1,4 @@
-"""Small defense-in-depth Python subprocess sandbox for the MVP."""
+"""Defense-in-depth Python execution sandbox."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 import shutil
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 from .. import config
@@ -30,11 +31,14 @@ def _trim(value: bytes, limit: int = 12_000) -> str:
     return text if len(text) <= limit else text[:limit] + "\n… output truncated …"
 
 
-async def _communicate(process: asyncio.subprocess.Process) -> dict:
+async def _communicate(process: asyncio.subprocess.Process, stdin: bytes | None = None, on_timeout=None) -> dict:
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=CODE_TIMEOUT_SECONDS)
+        stdout, stderr = await asyncio.wait_for(process.communicate(stdin), timeout=CODE_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        process.kill()
+        if on_timeout is not None:
+            await on_timeout()
+        if process.returncode is None:
+            process.kill()
         stdout, stderr = await process.communicate()
         return {"ok": False, "stdout": _trim(stdout), "stderr": f"Timed out after {CODE_TIMEOUT_SECONDS}s\n{_trim(stderr)}"}
     return {"ok": process.returncode == 0, "stdout": _trim(stdout), "stderr": _trim(stderr)}
@@ -59,10 +63,15 @@ async def _run_docker(script: Path) -> dict:
     docker = shutil.which("docker")
     if not docker:
         return {"ok": False, "stdout": "", "stderr": "Docker sandbox requested but Docker is unavailable"}
+    source = await asyncio.to_thread(script.read_bytes)
+    container_name = f"atlas-sandbox-{uuid.uuid4().hex}"
     process = await asyncio.create_subprocess_exec(
         docker,
         "run",
         "--rm",
+        "--name",
+        container_name,
+        "--interactive",
         "--network=none",
         "--read-only",
         "--cap-drop=ALL",
@@ -71,17 +80,28 @@ async def _run_docker(script: Path) -> dict:
         f"--cpus={config.SANDBOX_CPUS}",
         f"--pids-limit={config.SANDBOX_PIDS_LIMIT}",
         "--tmpfs=/tmp:rw,noexec,nosuid,size=16m",
-        "--volume",
-        f"{script}:/workspace/main.py:ro",
         "python:3.12-alpine",
         "python",
         "-I",
-        "/workspace/main.py",
+        "-",
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env={"PATH": os.environ.get("PATH", os.defpath)},
     )
-    return await _communicate(process)
+    async def force_remove() -> None:
+        cleanup = await asyncio.create_subprocess_exec(
+            docker,
+            "rm",
+            "--force",
+            container_name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env={"PATH": os.environ.get("PATH", os.defpath)},
+        )
+        await cleanup.communicate()
+
+    return await _communicate(process, source, force_remove)
 
 
 async def run_python(code: str) -> dict:

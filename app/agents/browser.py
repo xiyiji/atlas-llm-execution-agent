@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import llm, memory
-from ..models import PlanStep, Task
+from ..models import PlanStep, SearchProposal, Task
 from ..tools import web
 from .base import Agent
 
@@ -15,9 +15,12 @@ class Browser(Agent):
     async def run(self, task: Task, step: PlanStep) -> str:
         response = await llm.complete_json(
             "ATLAS_JSON_QUERY Return only JSON {\"query\": \"focused search query\"}.",
-            f"GOAL: {task.goal}\nSTEP: {step.title}",
+            f"GOAL: {task.goal}\nSTEP: {step.title}\nDETAIL: {step.detail}\n"
+            f"VERIFIER FEEDBACK: {task.verification or '(first pass)'}\n"
+            f"WORKING MEMORY:\n{memory.working_context(task.id) or '(empty)'}\n"
+            f"PREVIOUS ERROR: {step.error or '(none)'}",
         )
-        query = str(response.get("query", task.goal)) if isinstance(response, dict) else task.goal
+        query = SearchProposal.model_validate(response, strict=True).query
         results = await web.search(query, max_results=4)
         blocks = []
         for item in results:
