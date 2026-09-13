@@ -68,11 +68,18 @@ services:
 
   worker:
     build: .
-    user: root
-    command: ["celery", "-A", "app.task_queue:celery_app", "worker", "--beat", "--loglevel=INFO", "--concurrency=2"]
+    user: "10001:10001"
+    group_add:
+      - "${DOCKER_GID:-0}"
+    command: ["celery", "-A", "app.task_queue:celery_app", "worker", "--beat", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO", "--concurrency=2"]
     environment: *atlas-env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     depends_on:
       migrate:
         condition: service_completed_successfully

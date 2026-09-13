@@ -146,7 +146,7 @@ def _demo(system: str, prompt: str) -> str:
     if "atlas_json_safety" in lower:
         if any(word in lower for word in ("delete", "production", "payment", "password", "credential")):
             return json.dumps({"score": 75, "factors": ["Potentially consequential action requires human review"]})
-        return json.dumps({"score": 8, "factors": ["Read-only or locally sandboxed demo workload"]})
+        return json.dumps({"score": 8, "factors": ["Read-only or locally sandboxed workload"]})
     if "atlas_json_verifier" in lower:
         return json.dumps({"passed": True, "notes": "PASSED · confidence 0.92 — Outputs address the goal and are internally consistent."})
     if "atlas_json_query" in lower:
@@ -157,7 +157,7 @@ def _demo(system: str, prompt: str) -> str:
             return json.dumps({"code": "from statistics import mean, median, pstdev\ndata = [12, 15, 14, 18, 21, 20, 24]\nprint({'count': len(data), 'mean': round(mean(data), 2), 'median': median(data), 'std_dev': round(pstdev(data), 2), 'min': min(data), 'max': max(data)})"})
         return json.dumps({"code": "print('Sandbox task completed successfully')"})
     return (
-        "Completed the assigned step in deterministic demo mode. "
+        "Completed the assigned step through the deterministic local provider. "
         "The result is scoped to the stated goal and recorded for verification."
     )
 

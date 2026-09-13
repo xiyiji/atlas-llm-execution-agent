@@ -17,17 +17,17 @@ _DEMO_RESULTS = [
     {
         "title": "Reference overview — official documentation",
         "url": "https://docs.python.org/3/",
-        "snippet": "A deterministic demo source representing primary technical documentation.",
+        "snippet": "A deterministic local source representing primary technical documentation.",
     },
     {
         "title": "Research reference — arXiv",
         "url": "https://arxiv.org/",
-        "snippet": "A deterministic demo source representing current research literature.",
+        "snippet": "A deterministic local source representing current research literature.",
     },
     {
         "title": "Standards reference — NIST",
         "url": "https://www.nist.gov/artificial-intelligence",
-        "snippet": "A deterministic demo source representing standards and risk guidance.",
+        "snippet": "A deterministic local source representing standards and risk guidance.",
     },
 ]
 
@@ -65,7 +65,7 @@ async def search(query: str, max_results: int = 5) -> list[dict]:
 
 async def fetch_page(url: str, max_chars: int = 3500) -> str:
     if llm.is_demo():
-        return "Demo mode: external page fetching is disabled; the source metadata above is simulated."
+        return "Deterministic local mode: external page fetching is disabled; source metadata is generated locally."
     if not await _safe_public_url(url):
         return "Page unavailable: invalid URL"
     try:

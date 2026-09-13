@@ -122,10 +122,10 @@ def test_fetch_page_strips_scripts_and_tags(monkeypatch):
     assert asyncio.run(web.fetch_page("https://example.com/")) == "Title Body & text"
 
 
-def test_demo_mode_never_touches_the_network(monkeypatch):
+def test_deterministic_mode_never_touches_the_network(monkeypatch):
     def explode(**kwargs):
-        raise AssertionError("network client constructed in demo mode")
+        raise AssertionError("network client constructed in deterministic mode")
 
     monkeypatch.setattr(web.httpx, "AsyncClient", explode)
     assert asyncio.run(web.search("anything"))[0]["url"].startswith("https://")
-    assert "Demo mode" in asyncio.run(web.fetch_page("https://example.com/"))
+    assert "Deterministic local mode" in asyncio.run(web.fetch_page("https://example.com/"))
