@@ -9,6 +9,7 @@ risk policy, atomic approvals, isolated code execution, bounded verification,
 multi-tenant persistence, and real-time operational visibility.
 
 [![CI](https://github.com/xiyiji/atlas-llm-execution-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/xiyiji/atlas-llm-execution-agent/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/xiyiji/atlas-llm-execution-agent?display_name=tag)](https://github.com/xiyiji/atlas-llm-execution-agent/releases)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async%20API-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-durable%20state-4169E1?logo=postgresql&logoColor=white)
@@ -29,6 +30,10 @@ principle: model reasoning proposes work; the control plane owns execution.
 Planner, Safety, Browser, Coder, and Verifier agents contribute specialist
 decisions while the orchestrator enforces state transitions, authorization,
 retries, recovery, and auditability outside the model.
+
+**Current release: v0.2.0.** It is a self-hosted production foundation and a
+runnable reference implementation, not a managed service. Demo mode is the
+fastest way to inspect the complete workflow without model credentials.
 
 ## Why this system is different
 
@@ -136,7 +141,17 @@ transient connection loss does not discard task history.
 | Cross-tenant access | Server-derived tenant identity on every task, event, and memory query |
 | Prompt injection through tools | Untrusted-content markers, agent guard prompts, SSRF and content controls |
 
-## Run locally
+## Choose a run mode
+
+| Mode | Best for | State and queue | Code isolation |
+|---|---|---|---|
+| Local demo | Evaluation and development | SQLite, in-process execution | Isolated `python -I` subprocess |
+| Distributed | Deployment and integration testing | PostgreSQL, Redis, Celery | Ephemeral Docker container |
+
+The local path requires Python 3.12+. The distributed topology also requires
+Docker with Compose.
+
+## Run locally in demo mode
 
 ```bash
 python3 -m venv .venv
@@ -146,9 +161,10 @@ cp .env.example .env
 ./run.sh
 ```
 
-Open <http://127.0.0.1:8000>. The local profile uses the same orchestrator,
-persistence model, approval gate, sandbox policy, UI, and API contracts with a
-deterministic provider for credential-free development and regression testing.
+Open <http://127.0.0.1:8000>. The local profile runs the same orchestrator,
+approval flow, UI, and API contracts with SQLite, in-process execution, and a
+deterministic provider. It is credential-free and intentionally lighter than
+the distributed deployment profile.
 
 ## Run the distributed production topology
 

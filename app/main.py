@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import audit, config, llm, memory
+from . import __version__, audit, config, llm, memory
 from .auth import TenantContext, issue_session, tenant_context
 from .event_bus import BUS
 from .models import ApprovalRequest, CreateTaskRequest, Event
@@ -60,7 +60,7 @@ async def lifespan(_: FastAPI):
         await ORCHESTRATOR.shutdown()
 
 
-app = FastAPI(title="Atlas LLM Execution Agent", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Atlas LLM Execution Agent", version=__version__, lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.TRUSTED_HOSTS)
 if config.ALLOWED_ORIGINS:
     app.add_middleware(
