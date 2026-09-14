@@ -9,7 +9,7 @@ risk policy, atomic approvals, isolated code execution, bounded verification,
 multi-tenant persistence, and real-time operational visibility.
 
 [![CI](https://github.com/xiyiji/atlas-llm-execution-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/xiyiji/atlas-llm-execution-agent/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/xiyiji/atlas-llm-execution-agent?display_name=tag)](https://github.com/xiyiji/atlas-llm-execution-agent/releases)
+[![Version](https://img.shields.io/github/v/tag/xiyiji/atlas-llm-execution-agent?label=version)](https://github.com/xiyiji/atlas-llm-execution-agent/tags)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async%20API-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-durable%20state-4169E1?logo=postgresql&logoColor=white)
